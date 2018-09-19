@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
+
+		<script id="vertex-shader" type="x-shader/x-vertex">
+
+		attribute vec3 a_Position;
+		attribute vec2 a_TexCoord;
+
+		uniform vec4 u_LightPos;
+		uniform mat4 u_MvpMatrix;
+		uniform mat4 u_MvMatrix;
+		uniform mat3 u_MvMatrix_3by3;
+		varying vec2 v_TexCoord;
+
+		attribute vec3 a_Normal;
+		attribute vec3 a_Tangent;
+		attribute vec3 a_Bitangent;
+
+		varying vec3 v_L;
+		varying vec3 v_E;
+		varying vec3 v_N;
+
+		varying vec3 v_L_TS;
+		varying vec3 v_E_TS;
+
+		void
+		main()
+		{
+			// Transform position to eye-space
+			gl_Position = u_MvpMatrix * vec4(a_Position, 1.0);
+			v_TexCoord = a_TexCoord;
+
+			// Receive and transform light, eye, and normal vectors to eye-space
+			v_L = u_LightPos.xyz - (u_MvMatrix * vec4(a_Position, 1.0)).xyz;
+			v_E = -u_MvMatrix_3by3 * a_Position;
+			v_N = u_MvMatrix_3by3 * a_Normal;
+
+			// Receive and transform tangent, bitangent, and normal vectors for TBN transformation
+			vec3 vTangent = normalize(u_MvMatrix_3by3 * a_Tangent);
+			vec3 vBitangent = normalize(u_MvMatrix_3by3 * a_Bitangent);
+			vec3 vNormal = normalize(v_N);
+
+			// Create TBN matrix
+			mat3 TBN = mat3(
+				vec3(vTangent.x, vBitangent.x, vNormal.x),
+				vec3(vTangent.y, vBitangent.y, vNormal.y),
+				vec3(vTangent.z, vBitangent.z, vNormal.z));
+
+			// Create tangent-space light and eye vectors
+			v_L_TS = TBN * v_L;
+			v_E_TS = TBN * v_E;
+		}
+		</script>
+
+		<script id="fragment-shader" type="x-shader/x-fragment">
+
+		precision mediump float;
+
+		uniform vec3 u_LightColor;
+		uniform float u_kAmbient;
+		uniform float u_kDiffuse;
+		uniform float u_kSpecular;
+		uniform float u_shininess;
+
+		// orange texture
+		uniform sampler2D u_TextureSampler;
+
+		// orange normal map
+		// use texture lookup to get tangent space normal
+		uniform sampler2D u_TextureSamplerNormal;
+
+		uniform int u_options;
+
+		varying vec2 v_TexCoord;
+
+		varying vec3 v_L;
+		varying vec3 v_E;
+		varying vec3 v_N;
+
+		varying vec3 v_L_TS;
+		varying vec3 v_E_TS;
+
+		void
+		main()
+		{
+			// Vectors for lighting calculation (defaulted to non-normal lighting)
+			vec3 light = normalize(v_L);
+			vec3 eye = normalize(v_E);
+			vec3 normal = normalize(v_N);
+
+			// Tangent-space normal vector
+			vec3 v_N_TS = texture2D(u_TextureSamplerNormal, v_TexCoord).rgb*2.0 - 1.0;
+
+			// If option is set, reassign vectors for normal lighting
+			if(u_options == 3)
+			{
+				light = normalize(v_L_TS);
+				eye = normalize(v_E_TS);
+				normal = normalize(v_N_TS);
+			}
+
+			// Calculate lighting components
+			float ambient = u_kAmbient;
+			float diffuse = u_kDiffuse * max(dot(light, normal), 0.0);
+			float specular = u_kSpecular * pow(max(dot(reflect(light, normal), eye), 0.0), u_shininess);
+			// If the light is behind the surface, set specular to 0
+			if(dot(light, normal) < 0.0 || u_shininess == 0.0)
+				specular = 0.0;
+
+			// If option is set, disable lighting
+			if(u_options == 1)
+			{
+				ambient = 1.0;
+				diffuse = 0.0;
+				specular = 0.0;
+			}
+
+			// Collect texture
+			vec3 textureColor = texture2D(u_TextureSampler, v_TexCoord).rgb;
+			// Set fragment color as combination of light color, material lighting, and material color
+			gl_FragColor = vec4(u_LightColor * (ambient + diffuse + specular) * textureColor, 1.0);
+		}
+		</script>
+
+		<script type="text/javascript" src="./Common/webgl-utils.js"></script>
+		<script type="text/javascript" src="./Common/initShaders.js"></script>
+		<script type="text/javascript" src="./Common/MV.js"></script>
+		<script type="text/javascript" src="orange-objParser.js"></script>
+		<script type="text/javascript" src="orange-objViewer.js"></script>
+	</head>
+
+	<body>
+		<canvas id="gl-canvas" width="512" height="512">
+			Oops ... your browser doesn't support the HTML5 canvas element
+		</canvas>
+
+		</br>
+
+		<form>
+			  <input type="radio" name="color" id="texture" onclick="buttonChanged(this)">Texture<br>
+			  <input type="radio"  name="color" id="lighting" onclick="buttonChanged(this)">Lighting<br>
+			  <input type="radio"  name="color" id="normal" checked="checked" onclick="buttonChanged(this)">Normal<br>
+		</form>
+
+		</br>
+				
+		</body>
+</html>
